@@ -1,0 +1,13 @@
+# Hasil kompilasi
+bin/
+*.class
+
+# Artefak build (di-generate oleh build.bat)
+RingkasanBuku.jar
+
+# File OS / editor
+Thumbs.db
+.DS_Store
+.idea/
+.vscode/
+*.iml
