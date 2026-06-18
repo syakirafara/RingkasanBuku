@@ -8,13 +8,15 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
  * Summarizer berbasis API HuggingFace Inference.
  * Memanggil endpoint:
- *   POST https://api-inference.huggingface.co/models/&lt;model&gt;
+ *   POST https://router.huggingface.co/hf-inference/models/&lt;model&gt;
  * dengan header Authorization: Bearer &lt;token&gt; dan body JSON
  *   { "inputs": "...", "parameters": { "min_length": .., "max_length": .. } }
  *
@@ -24,7 +26,19 @@ import java.util.regex.Pattern;
 public class ApiBasedSummarizer extends AbstractSummarizer {
 
     public static final String DEFAULT_MODEL = "facebook/bart-large-cnn";
-    private static final String ENDPOINT = "https://api-inference.huggingface.co/models/";
+    // Endpoint Inference HuggingFace yang baru (router). Endpoint lama
+    // "api-inference.huggingface.co" sudah tidak aktif sejak 2024/2025.
+    private static final String ENDPOINT = "https://router.huggingface.co/hf-inference/models/";
+
+    // Batas aman panjang teks input. Model BART hanya menerima ~1024 token
+    // (posisi embedding). Bila teks lebih panjang, server membalas HTTP 400
+    // "index out of range in self". Karena teks Bahasa Indonesia cenderung
+    // pecah menjadi banyak token, batas karakter dibuat konservatif.
+    private static final int MAX_INPUT_CHARS = 1800;
+
+    // Batas jumlah potongan (chunk) untuk teks sangat panjang. Tiap chunk = 1
+    // panggilan API, jadi dibatasi agar proses tidak terlalu lama saat demo.
+    private static final int MAX_CHUNKS = 6;
 
     private final String apiToken;
     private final String model;
@@ -61,6 +75,27 @@ public class ApiBasedSummarizer extends AbstractSummarizer {
             default:       minLen = 50;  maxLen = 150; break;
         }
 
+        // --- Pecah teks panjang menjadi beberapa bagian (chunk) yang muat di model ---
+        List<String> chunks = splitIntoChunks(text);
+
+        // Kasus umum: teks pendek -> cukup satu panggilan API.
+        if (chunks.size() == 1) {
+            return callApi(chunks.get(0), minLen, maxLen);
+        }
+
+        // --- Teks panjang: ringkas tiap bagian, lalu gabungkan hasilnya ---
+        // Ini teknik "map" pada pola map-reduce summarization.
+        StringBuilder combined = new StringBuilder();
+        for (String chunk : chunks) {
+            String part = callApi(chunk, minLen, maxLen);
+            if (combined.length() > 0) combined.append(' ');
+            combined.append(part.trim());
+        }
+        return combined.toString().trim();
+    }
+
+    // Satu panggilan API HuggingFace untuk satu potong teks. Mengembalikan ringkasannya.
+    private String callApi(String text, int minLen, int maxLen) throws SummarizationException {
         // --- Susun body request dalam format JSON (dirakit manual sebagai String) ---
         String payload = "{\"inputs\":" + jsonString(text)
                 + ",\"parameters\":{\"min_length\":" + minLen
@@ -120,6 +155,34 @@ public class ApiBasedSummarizer extends AbstractSummarizer {
     @Override
     public String getName() {
         return "API-based (HuggingFace / " + model + ")";
+    }
+
+    // Pecah teks panjang menjadi beberapa bagian (chunk), masing-masing tidak
+    // melebihi MAX_INPUT_CHARS agar muat di model. Pemotongan diusahakan di
+    // batas akhir kalimat (. ! ?) supaya tiap bagian tetap utuh maknanya;
+    // bila tidak ada, dipotong di spasi terakhir agar kata tidak terbelah.
+    private static List<String> splitIntoChunks(String text) {
+        List<String> chunks = new ArrayList<>();
+        String remaining = text.trim();
+        while (remaining.length() > MAX_INPUT_CHARS && chunks.size() < MAX_CHUNKS - 1) {
+            String window = remaining.substring(0, MAX_INPUT_CHARS);
+            // Cari batas kalimat terakhir di dalam jendela.
+            int cut = Math.max(window.lastIndexOf(". "),
+                      Math.max(window.lastIndexOf("! "), window.lastIndexOf("? ")));
+            if (cut < MAX_INPUT_CHARS / 2) cut = window.lastIndexOf(' '); // jatuh ke spasi
+            cut = (cut <= 0) ? MAX_INPUT_CHARS : cut + 1;                 // sertakan pemisah
+            chunks.add(remaining.substring(0, cut).trim());
+            remaining = remaining.substring(cut).trim();
+        }
+        // Sisa terakhir: bila masih melebihi batas (karena sudah mentok MAX_CHUNKS),
+        // potong aman agar panggilan terakhir tetap valid.
+        if (remaining.length() > MAX_INPUT_CHARS) {
+            String cut = remaining.substring(0, MAX_INPUT_CHARS);
+            int lastSpace = cut.lastIndexOf(' ');
+            remaining = (lastSpace > MAX_INPUT_CHARS / 2 ? cut.substring(0, lastSpace) : cut).trim();
+        }
+        if (!remaining.isEmpty()) chunks.add(remaining);
+        return chunks;
     }
 
     // Potong string bila terlalu panjang (dipakai agar pesan error tidak kepanjangan).
