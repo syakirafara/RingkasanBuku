@@ -59,6 +59,7 @@ public class MainFrame extends JFrame {
     private final JComboBox<String> methodCombo = new JComboBox<>(new String[] { SOURCE_RULE, SOURCE_API });
     private final JComboBox<SummaryMethod> lengthCombo = new JComboBox<>(SummaryMethod.values());
     private final JPasswordField apiTokenField = new JPasswordField();
+    private final JLabel apiTokenLabel = new JLabel("API Token (HF):");
     private final JLabel statusLabel = new JLabel("Siap.");
 
     private final JButton summarizeBtn = new JButton("RINGKAS");
@@ -117,7 +118,7 @@ public class MainFrame extends JFrame {
         panel.add(lengthCombo, gbc);
 
         gbc.gridx = 4;
-        panel.add(new JLabel("API Token (HF):"), gbc);
+        panel.add(apiTokenLabel, gbc);
         gbc.gridx = 5; gbc.weightx = 1.0;
         apiTokenField.setToolTipText("Token HuggingFace (hf_...) — hanya dipakai bila metode API-based dipilih");
         panel.add(apiTokenField, gbc);
@@ -203,12 +204,19 @@ public class MainFrame extends JFrame {
         methodCombo.addActionListener(e -> updateApiFieldVisibility());
     }
 
-    // Aktif/nonaktifkan field API Token tergantung metode terpilih.
-    // Rule-based -> token tidak dipakai (abu-abu); API-based -> token aktif (putih).
+    // Tampilkan/sembunyikan field API Token tergantung metode terpilih.
+    // Rule-based -> label & field disembunyikan total (tidak dipakai);
+    // API-based  -> label & field dimunculkan agar token bisa diisi.
     private void updateApiFieldVisibility() {
         boolean api = SOURCE_API.equals(methodCombo.getSelectedItem());
-        apiTokenField.setEnabled(api);
-        apiTokenField.setBackground(api ? java.awt.Color.WHITE : new java.awt.Color(0xEE, 0xEE, 0xEE));
+        apiTokenLabel.setVisible(api);
+        apiTokenField.setVisible(api);
+        if (!api) {
+            apiTokenField.setText(""); // bersihkan token saat pindah ke Rule-based
+        }
+        // Susun ulang & gambar ulang panel atas agar ruang kolom ikut menyesuaikan.
+        apiTokenLabel.getParent().revalidate();
+        apiTokenLabel.getParent().repaint();
     }
 
     /* ------------------------------------------------------------------ */

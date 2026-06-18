@@ -1,0 +1,2 @@
+Ini ringkasan uji coba.
+Baris kedua untuk memastikan multi-baris jalan. Kalimat panjang sengaja dibuat agar word-wrap bekerja dengan baik dan rapi di dalam halaman PDF yang dihasilkan secara manual tanpa library apa pun.
